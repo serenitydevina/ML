@@ -1,18 +1,20 @@
 function Interface
     close all;
 
-    modelPath = 'KNN.m';
+    modelPath = 'KNN.mat';
     if ~isfile(modelPath)
-        errordlg('Model klasifikasi blueberry tidak ditemukan. Jalankan training.m terlebih dahulu.', 'Model Error');
+        errordlg('Model KNN tidak ditemukan. Jalankan training.m terlebih dahulu.', 'Model Error');
         return;
     end
-    //load(modelPath, 'mdl');
 
+    temp = load(modelPath);
     guiData = struct();
-    //guiData.model = mdl;
+    guiData.model = temp.knnModel;
+    guiData.inputSize = temp.inputSize;
     guiData.currentImage = [];
+    guiData.showAll = false;
 
-    mainFig = figure('Name', 'Klasifikasi Kematangan Blueberry', ...
+    mainFig = figure('Name', 'Klasifikasi Kematangan Buah', ...
         'NumberTitle', 'off', 'MenuBar', 'none', ...
         'Units', 'normalized', 'Position', [0.15 0.15 0.7 0.7], ...
         'Color', [0.95 0.95 0.95], 'DeleteFcn', @(~,~) disp('Interface Ditutup'));
@@ -62,25 +64,22 @@ function guiData = createUI(mainFig, guiData)
         'Units', 'normalized', 'Position', [0.05 0.05 0.9 0.15], ...
         'BackgroundColor', [0.7 0.7 0.7], 'Callback', @toggleResultsCallback);
 
-    guiData.showAll = false;
-
     imgPanel = uipanel('Parent', mainFig, 'Title', 'Pemrosesan Gambar', ...
         'Units', 'normalized', 'Position', [0.35 0.05 0.6 0.9], ...
         'FontSize', 12, 'FontWeight', 'bold', 'BackgroundColor', [0.9 0.9 0.9]);
 
     guiData.axesOriginal = axes('Parent', imgPanel, 'Position', [0.1 0.65 0.35 0.3]);
-    title(guiData.axesOriginal, 'Gambar Asli', 'FontSize', 11, 'FontWeight', 'bold');
-    
-    guiData.axesPreprocessed = axes('Parent', imgPanel, 'Position', [0.55 0.65 0.35 0.3]);
-    title(guiData.axesPreprocessed, 'Grayscale', 'FontSize', 11, 'FontWeight', 'bold');
-    
-    guiData.axesFinal = axes('Parent', imgPanel, 'Position', [0.3 0.25 0.4 0.35]);
-    title(guiData.axesFinal, 'Final (28x28)', 'FontSize', 11, 'FontWeight', 'bold');
+    title(guiData.axesOriginal, 'Gambar Asli');
 
+    guiData.axesPreprocessed = axes('Parent', imgPanel, 'Position', [0.55 0.65 0.35 0.3]);
+    title(guiData.axesPreprocessed, 'Grayscale');
+
+    guiData.axesFinal = axes('Parent', imgPanel, 'Position', [0.3 0.25 0.4 0.35]);
+    title(guiData.axesFinal, 'Final (128x128)');
 end
 
 function importImageCallback(~, ~)
-    [file, path] = uigetfile({'*.png;*.jpg;*.jpeg;*.bmp;*.tiff'}, 'Pilih Gambar Blueberry');
+    [file, path] = uigetfile({'*.png;*.jpg;*.jpeg;*.bmp;*.tiff'}, 'Pilih Gambar');
     if isequal(file, 0), return; end
 
     I = imread(fullfile(path, file));
@@ -96,16 +95,12 @@ function clearAllCallback(~, ~)
     cla(guiData.axesOriginal);
     cla(guiData.axesPreprocessed);
     cla(guiData.axesFinal);
-    
-    title(guiData.axesOriginal, 'Gambar Asli', 'FontSize', 11, 'FontWeight', 'bold');
-    title(guiData.axesPreprocessed, 'Grayscale', 'FontSize', 11, 'FontWeight', 'bold');
-    title(guiData.axesFinal, 'Final (28x28)', 'FontSize', 11, 'FontWeight', 'bold');
 
     set(guiData.predText, 'String', 'Prediksi: -');
     set(guiData.detailText, 'String', 'Top 3 Hasil:');
     set(guiData.resultsText, 'String', '-');
     set(guiData.toggleButton, 'String', 'Tampilkan Semua Hasil ▼');
-    
+
     guiData.currentImage = [];
     guiData.showAll = false;
     guidata(gcf, guiData);
@@ -114,7 +109,7 @@ end
 function toggleResultsCallback(~, ~)
     guiData = guidata(gcf);
     guiData.showAll = ~guiData.showAll;
-    
+
     if guiData.showAll
         set(guiData.detailText, 'String', 'Semua Hasil:');
         set(guiData.toggleButton, 'String', 'Tampilkan Lebih Sedikit ▲');
@@ -122,9 +117,9 @@ function toggleResultsCallback(~, ~)
         set(guiData.detailText, 'String', 'Top 3 Hasil:');
         set(guiData.toggleButton, 'String', 'Tampilkan Semua Hasil ▼');
     end
-    
+
     guidata(gcf, guiData);
-    
+
     if ~isempty(guiData.currentImage)
         processAndDisplayImage(guiData.currentImage);
     end
@@ -132,46 +127,50 @@ end
 
 function processAndDisplayImage(I)
     guiData = guidata(gcf);
-    
+
     if size(I,3) == 3
         I_gray = rgb2gray(I);
     else
         I_gray = I;
     end
-    
-    I_gray = im2double(I_gray);
-    I_final = imresize(I_gray, [28 28]);
-    
-    imshow(guiData.currentImage, 'Parent', guiData.axesOriginal);
-    imshow(I_gray, 'Parent', guiData.axesPreprocessed);
-    imshow(I_final, 'Parent', guiData.axesFinal);
 
-    hog = extractHOGFeatures(I_final);
-    hog = single(hog);
-    
-    [label, scores] = predict(guiData.model, hog);
-    
-    [sortedScores, sortedIndices] = sort(scores, 'descend');
+    I_gray = im2double(I_gray);
+    I_resized = imresize(I, guiData.inputSize);
+
+    imshow(I, 'Parent', guiData.axesOriginal);
+    imshow(I_gray, 'Parent', guiData.axesPreprocessed);
+    imshow(I_resized, 'Parent', guiData.axesFinal);
+
+    % Ekstraksi fitur KNN (mean RGB + entropy)
+    imgRGB = im2double(I_resized);
+
+    R = mean(mean(imgRGB(:,:,1)));
+    G = mean(mean(imgRGB(:,:,2)));
+    B = mean(mean(imgRGB(:,:,3)));
+    E = entropy(rgb2gray(imgRGB));
+
+    fiturUji = [R G B E];
+
+    [label, scores] = predict(guiData.model, fiturUji);
     classLabels = guiData.model.ClassNames;
-    
+
     set(guiData.predText, 'String', sprintf('Prediksi: %s', string(label)));
-    
+
+    [sortedScores, sortedIndices] = sort(scores, 'descend');
+
     resultsStr = '';
+
     if guiData.showAll
-        validResults = sortedScores >= 0.1;
-        numResults = sum(validResults);
+        numResults = length(sortedScores);
     else
         numResults = min(3, length(sortedScores));
     end
-    
+
     for i = 1:numResults
-        if guiData.showAll && sortedScores(i) < 0.1
-            break;
-        end
         confidence = sortedScores(i) * 100;
         ripeness = classLabels(sortedIndices(i));
         resultsStr = sprintf('%s%s: %.1f%%\n', resultsStr, string(ripeness), confidence);
     end
-    
+
     set(guiData.resultsText, 'String', resultsStr);
 end

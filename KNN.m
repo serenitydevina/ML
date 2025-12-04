@@ -13,26 +13,23 @@ imds = imageDatastore('sample', ...
 inputSize = [128 128];
 
 % --------------------------------------------------
-% 3. Ekstraksi fitur (warna + tekstur)
+% 3. Ekstraksi fitur (mean RGB + entropy)
 % --------------------------------------------------
 numImages = numel(imds.Files);
-features = zeros(numImages, 4);  % fitur: [meanR meanG meanB entropy]
+features = zeros(numImages, 4);  
 labels = imds.Labels;
 
 for i = 1:numImages
     img = readimage(imds, i);
-    
     img = imresize(img, inputSize);
-    
-    % Konversi ke RGB
     imgRGB = im2double(img);
-    
-    % Fitur Warna (rata-rata RGB)
+
+    % Mean RGB
     R = mean(mean(imgRGB(:,:,1)));
     G = mean(mean(imgRGB(:,:,2)));
     B = mean(mean(imgRGB(:,:,3)));
-    
-    % Fitur Tekstur (Entropy)
+
+    % Entropy
     gray = rgb2gray(imgRGB);
     E = entropy(gray);
 
@@ -41,7 +38,7 @@ end
 
 disp('Ekstraksi fitur selesai!');
 
-% Membagi data 80% train, 20% test
+% Split 80/20
 cv = cvpartition(labels,'HoldOut',0.2);
 
 Xtrain = features(training(cv), :);
@@ -59,6 +56,10 @@ knnModel = fitcknn(Xtrain, Ytrain, ...
 
 disp('Model KNN berhasil dibuat!');
 
+% Simpan model
+save('KNN.mat', 'knnModel', 'inputSize');
+disp('Model disimpan sebagai KNN.mat');
+
 Ypred = predict(knnModel, Xtest);
 
 % Akurasi
@@ -69,23 +70,3 @@ fprintf('Akurasi KNN: %.2f%%\n', akurasi);
 figure;
 confusionchart(Ytest, Ypred);
 title('Confusion Matrix KNN');
-
-% Load gambar yang ingin diprediksi
-img = imread('immature1.jpg');
-img = imresize(img, inputSize);
-imgRGB = im2double(img);
-
-% Fitur warna
-R = mean(mean(imgRGB(:,:,1)));
-G = mean(mean(imgRGB(:,:,2)));
-B = mean(mean(imgRGB(:,:,3)));
-
-% Fitur tekstur
-E = entropy(rgb2gray(imgRGB));
-
-fiturUji = [R G B E];
-
-hasil = predict(knnModel, fiturUji);
-
-fprintf('Prediksi tingkat kematangan: %s\n', hasil);
-
